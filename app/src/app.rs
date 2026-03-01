@@ -1,20 +1,25 @@
 use leptos::prelude::*;
-use leptos_meta::{provide_meta_context, MetaTags, Stylesheet, Title};
-use leptos_router::{
-    components::{Route, Router, Routes},
-    StaticSegment,
-};
+use leptos_meta::*;
+use leptos_router::{components::*, path};
 
-pub fn shell(options: LeptosOptions) -> impl IntoView {
+use crate::features::{
+    documents::page::DocumentsPage, sign::page::SignPage, verify::page::VerifyPage,
+};
+use crate::shared::components::navbar::Navbar;
+
+#[cfg(feature = "ssr")]
+pub fn shell(options: leptos::config::LeptosOptions) -> impl IntoView {
     view! {
         <!DOCTYPE html>
         <html lang="en">
             <head>
-                <meta charset="utf-8"/>
-                <meta name="viewport" content="width=device-width, initial-scale=1"/>
-                <AutoReload options=options.clone() />
-                <HydrationScripts options/>
+                <meta charset="UTF-8"/>
+                <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+                <AutoReload options=options.clone()/>
+                <HydrationScripts options=options.clone()/>
                 <MetaTags/>
+                <script src="https://cdn.tailwindcss.com"></script>
+                <link rel="stylesheet" href="/pkg/stego-app.css"/>
             </head>
             <body>
                 <App/>
@@ -25,37 +30,21 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
 
 #[component]
 pub fn App() -> impl IntoView {
-    // Provides context that manages stylesheets, titles, meta tags, etc.
     provide_meta_context();
 
     view! {
-        // injects a stylesheet into the document <head>
-        // id=leptos means cargo-leptos will hot-reload this stylesheet
-        <Stylesheet id="leptos" href="/pkg/app.css"/>
-
-        // sets the document title
-        <Title text="Welcome to Leptos"/>
-
-        // content for this welcome page
+        <Title text="StegoSign — Document Integrity"/>
         <Router>
-            <main>
-                <Routes fallback=|| "Page not found.".into_view()>
-                    <Route path=StaticSegment("") view=HomePage/>
+            <Navbar/>
+            <main class="min-h-screen pt-16 px-4 max-w-6xl mx-auto">
+                <Routes fallback=|| view! {
+                    <p class="text-red-400 text-center mt-20 text-xl">"Page not found"</p>
+                }>
+                    <Route path=path!("/")          view=SignPage/>
+                    <Route path=path!("/verify")    view=VerifyPage/>
+                    <Route path=path!("/documents") view=DocumentsPage/>
                 </Routes>
             </main>
         </Router>
-    }
-}
-
-/// Renders the home page of your application.
-#[component]
-fn HomePage() -> impl IntoView {
-    // Creates a reactive value to update the button
-    let count = RwSignal::new(0);
-    let on_click = move |_| *count.write() += 1;
-
-    view! {
-        <h1>"Welcome to Leptos!"</h1>
-        <button on:click=on_click>"Click Me: " {count}</button>
     }
 }
