@@ -1,3 +1,4 @@
+use axum::http::StatusCode;
 use axum::{
     Json,
     extract::{Multipart, State},
@@ -9,7 +10,10 @@ use uuid::Uuid;
 
 use crate::{
     AppState,
-    models::{document::CreateDocument, response::ApiResponse},
+    models::{
+        document::CreateDocument,
+        response::{ApiError, ApiResponse},
+    },
     repositories::document as doc_repo,
     services::{crypto, stego, storage},
 };
@@ -39,7 +43,13 @@ pub async fn sign_handler(
 
     let bytes = match file_bytes {
         Some(b) => b,
-        None => return Json(ApiResponse::<()>::err("no file provided")).into_response(),
+        None => {
+            return ApiError {
+                status: StatusCode::BAD_REQUEST,
+                message: "no file provided".to_string(),
+            }
+            .into_response();
+        }
     };
 
     info!(filename = %filename, author = %author, "sign request received");
@@ -51,8 +61,11 @@ pub async fn sign_handler(
     let signature = match crypto::sign(&hash, state.signing_key.as_str()) {
         Ok(s) => s,
         Err(e) => {
-            error!(error = %e, "failed to sign document");
-            return Json(ApiResponse::<()>::err("signing failed")).into_response();
+            return ApiError {
+                status: StatusCode::INTERNAL_SERVER_ERROR,
+                message: format!("signing failed: {}", e),
+            }
+            .into_response();
         }
     };
 
@@ -63,7 +76,11 @@ pub async fn sign_handler(
             Ok(b) => b,
             Err(e) => {
                 error!(error = %e, "stego embed failed");
-                return Json(ApiResponse::<()>::err("embed failed")).into_response();
+                return ApiError {
+                    status: StatusCode::INTERNAL_SERVER_ERROR,
+                    message: "embed failed".to_string(),
+                }
+                .into_response();
             }
         };
 
@@ -82,7 +99,11 @@ pub async fn sign_handler(
     .await
     {
         error!(error = %e, "upload to minio failed");
-        return Json(ApiResponse::<()>::err("storage upload failed")).into_response();
+        return ApiError {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: "storage upload failed".to_string(),
+        }
+        .into_response();
     }
 
     // -- 5. upload signed file to signatures bucket
@@ -97,7 +118,11 @@ pub async fn sign_handler(
     .await
     {
         error!(error = %e, "upload signed file failed");
-        return Json(ApiResponse::<()>::err("storage upload failed")).into_response();
+        return ApiError {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: "storage upload failed".to_string(),
+        }
+        .into_response();
     }
 
     // -- 6. register object in files.objects
@@ -126,7 +151,11 @@ pub async fn sign_handler(
         .await
     {
         error!(error = %e, "failed to register object in files.objects");
-        return Json(ApiResponse::<()>::err("database error")).into_response();
+        return ApiError {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: "database error".to_string(),
+        }
+        .into_response();
     }
 
     // -- 7. register document in app.documents
@@ -149,7 +178,11 @@ pub async fn sign_handler(
         Ok(id) => id,
         Err(e) => {
             error!(error = %e, "db insert failed");
-            return Json(ApiResponse::<()>::err("database error")).into_response();
+            return ApiError {
+                status: StatusCode::INTERNAL_SERVER_ERROR,
+                message: "database error".to_string(),
+            }
+            .into_response();
         }
     };
 
