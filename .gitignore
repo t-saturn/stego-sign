@@ -3,3 +3,7 @@ minio.license
 
 # -- enviroment variables
 .env
+
+# -- rust
+target
+logs
