@@ -45,7 +45,7 @@ pub async fn verify_handler(
     let _ = storage::upload(
         &state.storage,
         storage::BUCKET_UPLOADS,
-        &upload_key,
+        &upload_key, // -- pasa referencia, no mueve
         bytes.clone(),
         "application/octet-stream",
     )
@@ -55,7 +55,7 @@ pub async fn verify_handler(
         &state.db,
         obj_repo::CreateObject {
             bucket_name: storage::BUCKET_UPLOADS.to_string(),
-            object_key: upload_key.clone(),
+            object_key: upload_key.clone(), // -- clona aqui
             filename: filename.clone(),
             content_type: "application/octet-stream".to_string(),
             size_bytes,
@@ -77,8 +77,9 @@ pub async fn verify_handler(
                     result: DocumentStatus::Invalid,
                     checked_hash: Some(current_hash.clone()),
                     details: serde_json::json!({
-                        "reason":   "no payload found",
-                        "filename": filename,
+                        "reason":     "no payload found",
+                        "filename":   filename,
+                        "upload_key": upload_key,   // -- disponible porque storage::upload recibio &upload_key
                     }),
                 },
             )
@@ -156,6 +157,7 @@ pub async fn verify_handler(
                 "reason":       "payload found but document not in registry",
                 "filename":     filename,
                 "current_hash": current_hash,
+                "upload_key":   upload_key.clone(),
             }),
         ),
         Err(e) => (
@@ -163,7 +165,11 @@ pub async fn verify_handler(
             false,
             false,
             false,
-            serde_json::json!({ "reason": format!("database error: {}", e) }),
+            serde_json::json!({
+                "reason":     format!("database error: {}", e),
+                "filename":   filename.clone(),
+                "upload_key": upload_key.clone(),
+            }),
         ),
     };
 
