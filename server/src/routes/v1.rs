@@ -5,7 +5,7 @@ use axum::{
 
 use crate::{
     AppState,
-    handlers::{admin, documents, health, sign, verify},
+    handlers::{admin, documents, health, sign, stats, verify},
 };
 
 pub fn router() -> Router<AppState> {
@@ -25,4 +25,5 @@ pub fn router() -> Router<AppState> {
         )
         // -- dev only
         .route("/api/v1/admin/keygen", get(admin::keygen_handler))
+        .route("/api/v1/stats", get(stats::stats_handler))
 }
