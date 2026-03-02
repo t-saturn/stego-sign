@@ -1,22 +1,34 @@
+use super::api::Stats;
 use leptos::prelude::*;
 use leptos_router::components::A;
 use lucide_leptos::{Activity, ArrowRight, Database, FileCheck, FileLock, FileSearch, ShieldCheck};
 
 #[component]
 pub fn HomePage() -> impl IntoView {
+    let stats = RwSignal::new(Stats::default());
+
+    // -- solo en el browser, nunca en SSR
+    #[cfg(feature = "hydrate")]
+    {
+        use super::api::fetch_stats;
+        use wasm_bindgen_futures::spawn_local;
+        spawn_local(async move {
+            if let Ok(s) = fetch_stats().await {
+                stats.set(s);
+            }
+        });
+    }
+
     view! {
         <div class="relative min-h-screen flex flex-col">
 
-            // -- hero section
+            // -- hero
             <section class="flex-1 flex flex-col items-center justify-center text-center px-4 py-24">
-
-                // -- badge
                 <div class="inline-flex items-center gap-2 bg-primary-50 border border-primary-200 text-primary-600 text-sm font-semibold px-4 py-2 rounded-full mb-8">
                     <span class="w-2 h-2 bg-primary-500 rounded-full animate-pulse"></span>
                     "Document Integrity System"
                 </div>
 
-                // -- headline
                 <h1 class="text-5xl md:text-7xl font-display font-bold text-navy mb-6 leading-tight">
                     "Protect Your"
                     <br/>
@@ -25,36 +37,33 @@ pub fn HomePage() -> impl IntoView {
                     </span>
                 </h1>
 
-                // -- subtitle
                 <p class="text-lg md:text-xl text-gray-500 max-w-2xl mb-12 leading-relaxed">
                     "Embed cryptographic signatures using steganography. "
                     "Detect tampering instantly. "
                     "Verify authenticity with forensic-grade analysis."
                 </p>
 
-                // -- cta buttons
                 <div class="flex flex-col sm:flex-row gap-4 justify-center">
                     <A href="/sign" attr:class="group inline-flex items-center gap-3 px-8 py-4 text-base font-semibold text-white bg-gradient-to-r from-primary-500 to-primary-600 rounded-full hover:from-primary-600 hover:to-primary-700 transform hover:scale-105 hover:shadow-xl hover:shadow-primary-500/30 transition-all duration-300 shadow-lg">
-                        <FileLock size=20 />
+                        <FileLock size=20 color="#ffffff" />
                         "Sign a Document"
                         <span class="transform group-hover:translate-x-1 transition-transform duration-300">
-                            <ArrowRight size=18 />
+                            <ArrowRight size=18 color="#ffffff" />
                         </span>
                     </A>
                     <A href="/verify" attr:class="group inline-flex items-center gap-3 px-8 py-4 text-base font-semibold text-primary-600 bg-white border-2 border-primary-500 rounded-full hover:bg-primary-50 hover:border-primary-600 hover:shadow-lg transform hover:scale-105 transition-all duration-300">
-                        <FileSearch size=20 />
+                        <FileSearch size=20 color="#d20f39" />
                         "Verify Integrity"
                         <span class="transform group-hover:translate-x-1 transition-transform duration-300">
-                            <ArrowRight size=18 />
+                            <ArrowRight size=18 color="#d20f39" />
                         </span>
                     </A>
                 </div>
             </section>
 
-            // -- features section
+            // -- features
             <section class="py-20 px-4 bg-gray-50">
                 <div class="max-w-6xl mx-auto">
-
                     <div class="text-center mb-16">
                         <span class="section-label justify-center">"How it works"</span>
                         <h2 class="section-title">"Three steps to trust"</h2>
@@ -95,31 +104,47 @@ pub fn HomePage() -> impl IntoView {
                 </div>
             </section>
 
-            // -- stats section
+            // -- stats reactivos
             <section class="py-16 px-4 bg-white border-t border-gray-100">
                 <div class="max-w-6xl mx-auto">
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
-                        <StatusStat label="Documents Signed"  value="—">
+                        <StatusStat
+                            label="Documents Signed"
+                            value=Signal::derive(move || {
+                                let t = stats.get().total;
+                                if t == 0 { "—".to_string() } else { t.to_string() }
+                            })
+                        >
                             <FileLock size=24 color="#d20f39" />
                         </StatusStat>
-                        <StatusStat label="Verifications"     value="—">
+                        <StatusStat
+                            label="Verifications"
+                            value=Signal::derive(move || "—".to_string())
+                        >
                             <ShieldCheck size=24 color="#d20f39" />
                         </StatusStat>
-                        <StatusStat label="Tampered Detected" value="—">
+                        <StatusStat
+                            label="Tampered Detected"
+                            value=Signal::derive(move || {
+                                let t = stats.get().tampered;
+                                if t == 0 { "—".to_string() } else { t.to_string() }
+                            })
+                        >
                             <Activity size=24 color="#f59e0b" />
                         </StatusStat>
-                        <StatusStat label="Storage Vaults"    value="3">
+                        <StatusStat
+                            label="Storage Vaults"
+                            value=Signal::derive(move || "3".to_string())
+                        >
                             <Database size=24 color="#1e293b" />
                         </StatusStat>
                     </div>
                 </div>
             </section>
-
         </div>
     }
 }
 
-// -- feature card
 #[component]
 fn FeatureCard(
     step: &'static str,
@@ -135,7 +160,7 @@ fn FeatureCard(
                 <div class="p-3 bg-primary-50 rounded-xl group-hover:bg-primary-100 transition-colors duration-300">
                     {children()}
                 </div>
-                <span class="text-xs font-bold text-gray-200 font-display text-2xl">{step}</span>
+                <span class="text-2xl font-bold text-gray-200 font-display">{step}</span>
             </div>
             <h3 class="text-xl font-display font-bold text-navy">{title}</h3>
             <p class="text-gray-500 text-sm leading-relaxed flex-1">{description}</p>
@@ -145,22 +170,21 @@ fn FeatureCard(
             >
                 {cta}
                 <span class="group-hover/link:translate-x-1 transition-transform duration-200">
-                    <ArrowRight size=16 />
+                    <ArrowRight size=16 color="#d20f39" />
                 </span>
             </a>
         </div>
     }
 }
 
-// -- stat component
 #[component]
-fn StatusStat(label: &'static str, value: &'static str, children: Children) -> impl IntoView {
+fn StatusStat(label: &'static str, value: Signal<String>, children: Children) -> impl IntoView {
     view! {
         <div class="flex flex-col items-center gap-2">
             <div class="p-3 bg-gray-50 rounded-xl">
                 {children()}
             </div>
-            <span class="text-3xl font-display font-bold text-navy">{value}</span>
+            <span class="text-3xl font-display font-bold text-navy">{move || value.get()}</span>
             <span class="text-sm text-gray-500">{label}</span>
         </div>
     }
