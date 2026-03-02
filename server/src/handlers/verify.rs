@@ -3,17 +3,16 @@ use axum::{
     extract::{Multipart, State},
     response::IntoResponse,
 };
+use sea_orm::ConnectionTrait;
 use tracing::{info, warn};
 
 use crate::{
     AppState,
     models::{audit_log::CreateAuditLog, document::DocumentStatus, response::ApiResponse},
-    repositories::{audit_log as audit_repo, document as doc_repo},
+    repositories::{audit_log as audit_repo, document as doc_repo, object as obj_repo},
     services::{crypto, stego, storage},
 };
 
-// -- POST /api/v1/verify
-// -- extracts stego payload, cross-checks with db, returns forensic analysis
 pub async fn verify_handler(
     State(state): State<AppState>,
     mut multipart: Multipart,
@@ -35,38 +34,69 @@ pub async fn verify_handler(
 
     info!(filename = %filename, "verify request received");
 
-    // -- 1. compute current hash
-    // let current_hash = crypto::sha256(&bytes);
+    let size_bytes = bytes.len() as i64;
 
-    // -- strip stego block before hashing to get original content hash
+    // -- 1. strip payload antes de hashear
     let stripped = stego::strip(&bytes);
     let current_hash = crypto::sha256(&stripped);
 
-    // -- 2. extract stego payload
+    // -- 2. sube el archivo al bucket uploads siempre
+    let upload_key = format!("verify/{}/{}", uuid::Uuid::new_v4(), filename);
+    let _ = storage::upload(
+        &state.storage,
+        storage::BUCKET_UPLOADS,
+        &upload_key,
+        bytes.clone(),
+        "application/octet-stream",
+    )
+    .await;
+
+    let _ = obj_repo::register(
+        &state.db,
+        obj_repo::CreateObject {
+            bucket_name: storage::BUCKET_UPLOADS.to_string(),
+            object_key: upload_key.clone(),
+            filename: filename.clone(),
+            content_type: "application/octet-stream".to_string(),
+            size_bytes,
+        },
+    )
+    .await;
+
+    // -- 3. extrae payload esteganográfico
     let payload = match stego::extract(&filename, &bytes) {
         Ok(p) => p,
         Err(_) => {
             warn!(filename = %filename, "no stego payload found");
+
             let _ = audit_repo::create(
                 &state.db,
                 CreateAuditLog {
                     document_id: None,
+                    action: "VERIFY".to_string(),
                     result: DocumentStatus::Invalid,
                     checked_hash: Some(current_hash.clone()),
-                    details: serde_json::json!({ "reason": "no payload found" }),
+                    details: serde_json::json!({
+                        "reason":   "no payload found",
+                        "filename": filename,
+                    }),
                 },
             )
             .await;
+
             return Json(ApiResponse::ok(serde_json::json!({
-                "status":       "INVALID",
-                "current_hash": current_hash,
-                "reason":       "no steganographic payload found in file",
+                "status":          "INVALID",
+                "hash_match":      false,
+                "signature_valid": false,
+                "registered":      false,
+                "filename":        filename,
+                "current_hash":    current_hash,
             })))
             .into_response();
         }
     };
 
-    // -- 3. cross-check with db by document_id from payload
+    // -- 4. cross-check con db
     let db_doc = doc_repo::find_by_hash(&state.db, &payload.original_hash).await;
 
     let (status, hash_match, signature_valid, registered, details) = match db_doc {
@@ -95,7 +125,9 @@ pub async fn verify_handler(
                         false,
                         true,
                         serde_json::json!({
-                            "reason": "signature mismatch despite matching hash",
+                            "document_id": doc.id,
+                            "filename":    doc.filename,
+                            "reason":      "signature mismatch despite matching hash",
                         }),
                     )
                 }
@@ -107,6 +139,7 @@ pub async fn verify_handler(
                     true,
                     serde_json::json!({
                         "document_id":   doc.id,
+                        "filename":      doc.filename,
                         "original_hash": doc.hash_sha256,
                         "current_hash":  current_hash,
                         "reason":        "content hash does not match registered document",
@@ -121,6 +154,7 @@ pub async fn verify_handler(
             false,
             serde_json::json!({
                 "reason":       "payload found but document not in registry",
+                "filename":     filename,
                 "current_hash": current_hash,
             }),
         ),
@@ -133,21 +167,48 @@ pub async fn verify_handler(
         ),
     };
 
-    // -- si tampered: guarda en corrupted bucket (igual que antes)
+    // -- 5. si tampered: actualiza status en db + sube a corrupted
     if status == DocumentStatus::Tampered {
-        let key = format!("corrupted/{}", filename);
+        // -- actualiza el documento en app.documents
+        if let Some(doc_id_str) = details.get("document_id").and_then(|v| v.as_str()) {
+            if let Ok(doc_uuid) = doc_id_str.parse::<uuid::Uuid>() {
+                let _ = state.db.execute(
+                    sea_orm::Statement::from_sql_and_values(
+                        sea_orm::DatabaseBackend::Postgres,
+                        "UPDATE app.documents SET status = 'TAMPERED'::app.document_status WHERE id = $1",
+                        [doc_uuid.into()],
+                    )
+                ).await;
+            }
+        }
+
+        // -- sube a bucket corrupted
+        let corrupted_key = format!("corrupted/{}/{}", uuid::Uuid::new_v4(), filename);
         let _ = storage::upload(
             &state.storage,
             storage::BUCKET_CORRUPTED,
-            &key,
-            bytes,
+            &corrupted_key,
+            bytes.clone(),
             "application/octet-stream",
         )
         .await;
+
+        let _ = obj_repo::register(
+            &state.db,
+            obj_repo::CreateObject {
+                bucket_name: storage::BUCKET_CORRUPTED.to_string(),
+                object_key: corrupted_key,
+                filename: format!("corrupted_{}", filename),
+                content_type: "application/octet-stream".to_string(),
+                size_bytes,
+            },
+        )
+        .await;
+
         warn!(filename = %filename, "tampered file stored in corrupted bucket");
     }
 
-    // -- audit log (igual que antes)
+    // -- 6. audit log
     let _ = audit_repo::create(
         &state.db,
         CreateAuditLog {
@@ -155,6 +216,7 @@ pub async fn verify_handler(
                 .get("document_id")
                 .and_then(|v| v.as_str())
                 .and_then(|s| s.parse().ok()),
+            action: "VERIFY".to_string(),
             result: status.clone(),
             checked_hash: Some(current_hash.clone()),
             details: details.clone(),
@@ -164,17 +226,16 @@ pub async fn verify_handler(
 
     info!(status = %status, "verification complete");
 
-    // -- respuesta con booleanos explícitos
     Json(ApiResponse::ok(serde_json::json!({
         "status":          status,
         "hash_match":      hash_match,
         "signature_valid": signature_valid,
         "registered":      registered,
-        "document_id":     details.get("document_id"),
-        "filename":        details.get("filename"),
-        "author":          details.get("author"),
+        "document_id":     details.get("document_id").and_then(|v| v.as_str()),
+        "filename":        details.get("filename").and_then(|v| v.as_str()),
+        "author":          details.get("author").and_then(|v| v.as_str()),
         "signed_at":       details.get("signed_at"),
-        "hash":            details.get("hash"),
+        "hash":            details.get("hash").and_then(|v| v.as_str()),
     })))
     .into_response()
 }

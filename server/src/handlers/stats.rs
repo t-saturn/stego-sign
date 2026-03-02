@@ -5,8 +5,7 @@ use tracing::info;
 use crate::{
     AppState,
     models::response::ApiResponse,
-    repositories::{audit_log as audit_repo, document as doc_repo},
-    services::storage,
+    repositories::{audit_log as audit_repo, document as doc_repo, object as obj_repo},
 };
 
 #[derive(Debug, Serialize)]
@@ -20,27 +19,13 @@ pub struct StatsData {
 
 pub async fn stats_handler(State(state): State<AppState>) -> impl IntoResponse {
     let documents_signed = doc_repo::count_all(&state.db).await.unwrap_or(0);
-
     let verifications = audit_repo::count_by_action(&state.db, "VERIFY")
         .await
         .unwrap_or(0);
-
     let tampered = doc_repo::count_by_status(&state.db, "TAMPERED")
         .await
         .unwrap_or(0);
-
-    let buckets = [
-        storage::BUCKET_UPLOADS,
-        storage::BUCKET_SIGNATURES,
-        storage::BUCKET_CORRUPTED,
-    ];
-
-    let mut objects: u64 = 0;
-    for bucket in &buckets {
-        if let Ok(count) = storage::count_objects(&state.storage, bucket).await {
-            objects += count;
-        }
-    }
+    let objects = obj_repo::count_all(&state.db).await.unwrap_or(0);
 
     info!(
         documents_signed,

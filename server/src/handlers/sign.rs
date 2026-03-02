@@ -4,22 +4,21 @@ use axum::{
     extract::{Multipart, State},
     response::IntoResponse,
 };
-use sea_orm::ConnectionTrait;
 use tracing::{error, info};
 use uuid::Uuid;
 
 use crate::{
     AppState,
     models::{
-        document::CreateDocument,
+        audit_log::CreateAuditLog,
+        document::{CreateDocument, DocumentStatus},
         response::{ApiError, ApiResponse},
     },
-    repositories::document as doc_repo,
+    repositories::{audit_log as audit_repo, document as doc_repo, object as obj_repo},
     services::{crypto, stego, storage},
 };
 
 // -- POST /api/v1/sign
-// -- receives a file + author, embeds stego payload, stores in minio and db
 pub async fn sign_handler(
     State(state): State<AppState>,
     mut multipart: Multipart,
@@ -54,10 +53,12 @@ pub async fn sign_handler(
 
     info!(filename = %filename, author = %author, "sign request received");
 
-    // -- 1. compute sha256 of original file
+    let file_size = bytes.len() as i64;
+
+    // -- 1. sha256 del original
     let hash = crypto::sha256(&bytes);
 
-    // -- 2. sign the hash
+    // -- 2. firma el hash con Ed25519
     let signature = match crypto::sign(&hash, state.signing_key.as_str()) {
         Ok(s) => s,
         Err(e) => {
@@ -69,7 +70,7 @@ pub async fn sign_handler(
         }
     };
 
-    // -- 3. embed stego payload into the file
+    // -- 3. embebe payload esteganográfico
     let document_id = Uuid::new_v4();
     let signed_bytes =
         match stego::embed(&bytes, &filename, document_id, &hash, &signature, &author) {
@@ -84,21 +85,18 @@ pub async fn sign_handler(
             }
         };
 
-    // -- save size before bytes is moved into upload
-    let file_size = bytes.len() as i64;
-
-    // -- 4. upload original to uploads bucket
+    // -- 4. sube original al bucket uploads
     let upload_key = format!("{}/{}", document_id, filename);
     if let Err(e) = storage::upload(
         &state.storage,
         storage::BUCKET_UPLOADS,
         &upload_key,
-        bytes,
+        bytes.clone(),
         "application/octet-stream",
     )
     .await
     {
-        error!(error = %e, "upload to minio failed");
+        error!(error = %e, "upload original to minio failed");
         return ApiError {
             status: StatusCode::INTERNAL_SERVER_ERROR,
             message: "storage upload failed".to_string(),
@@ -106,7 +104,7 @@ pub async fn sign_handler(
         .into_response();
     }
 
-    // -- 5. upload signed file to signatures bucket
+    // -- 5. sube archivo firmado al bucket signatures
     let signed_key = format!("{}/signed_{}", document_id, filename);
     if let Err(e) = storage::upload(
         &state.storage,
@@ -125,40 +123,48 @@ pub async fn sign_handler(
         .into_response();
     }
 
-    // -- 6. register object in files.objects
-    let object_id = Uuid::new_v4();
-    if let Err(e) = state
-        .db
-        .execute(sea_orm::Statement::from_sql_and_values(
-            sea_orm::DatabaseBackend::Postgres,
-            r#"
-        INSERT INTO files.objects
-            (id, bucket_id, object_key, filename, content_type, size_bytes)
-        VALUES (
-            $1,
-            (SELECT id FROM files.buckets WHERE name = $2),
-            $3, $4, 'application/octet-stream', $5
-        )
-        "#,
-            [
-                object_id.into(),
-                storage::BUCKET_UPLOADS.into(),
-                upload_key.clone().into(),
-                filename.clone().into(),
-                file_size.into(),
-            ],
-        ))
-        .await
+    // -- 6. registra original en files.objects
+    let object_id = match obj_repo::register(
+        &state.db,
+        obj_repo::CreateObject {
+            bucket_name: storage::BUCKET_UPLOADS.to_string(),
+            object_key: upload_key.clone(),
+            filename: filename.clone(),
+            content_type: "application/octet-stream".to_string(),
+            size_bytes: file_size,
+        },
+    )
+    .await
     {
-        error!(error = %e, "failed to register object in files.objects");
-        return ApiError {
-            status: StatusCode::INTERNAL_SERVER_ERROR,
-            message: "database error".to_string(),
+        Ok(id) => id,
+        Err(e) => {
+            error!(error = %e, "failed to register original in files.objects");
+            return ApiError {
+                status: StatusCode::INTERNAL_SERVER_ERROR,
+                message: "database error".to_string(),
+            }
+            .into_response();
         }
-        .into_response();
-    }
+    };
 
-    // -- 7. register document in app.documents
+    // -- 7. registra archivo firmado en files.objects
+    let signed_size = {
+        // -- aproximación: el firmado es ligeramente mayor
+        file_size
+    };
+    let _ = obj_repo::register(
+        &state.db,
+        obj_repo::CreateObject {
+            bucket_name: storage::BUCKET_SIGNATURES.to_string(),
+            object_key: signed_key.clone(),
+            filename: format!("signed_{}", filename),
+            content_type: "application/octet-stream".to_string(),
+            size_bytes: signed_size,
+        },
+    )
+    .await;
+
+    // -- 8. registra documento en app.documents
     let doc_id = match doc_repo::create(
         &state.db,
         CreateDocument {
@@ -185,6 +191,24 @@ pub async fn sign_handler(
             .into_response();
         }
     };
+
+    // -- 9. registra en audit_log con action SIGN
+    let _ = audit_repo::create(
+        &state.db,
+        CreateAuditLog {
+            document_id: Some(doc_id),
+            action: "SIGN".to_string(),
+            result: DocumentStatus::Valid,
+            checked_hash: Some(hash.clone()),
+            details: serde_json::json!({
+                "filename":   filename,
+                "author":     author,
+                "upload_key": upload_key,
+                "signed_key": signed_key,
+            }),
+        },
+    )
+    .await;
 
     info!(document_id = %doc_id, "document signed and stored");
 
