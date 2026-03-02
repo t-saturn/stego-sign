@@ -23,6 +23,9 @@ pub struct Env {
     // -- en el struct Env
     pub signing_key: String, // -- ed25519 private key pkcs8 base64
     pub verify_key: String,  // -- ed25519 public key raw base64
+
+    // -- base URL for the application
+    pub app_base_url: String,
 }
 
 impl Env {
@@ -58,6 +61,8 @@ impl Env {
             );
         }
 
+        let app_base_url = var("APP_BASE_URL", "http://localhost:3001");
+
         Self {
             database_url,
             postgres_host,
@@ -77,6 +82,7 @@ impl Env {
 
             signing_key,
             verify_key,
+            app_base_url,
         }
     }
 }
