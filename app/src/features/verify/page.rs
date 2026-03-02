@@ -3,7 +3,10 @@ use lucide_leptos::{ArrowRight, CircleAlert, FileSearch, LoaderCircle, RotateCcw
 use wasm_bindgen_futures::spawn_local;
 
 use super::api::{verify_document, VerifyData};
-use super::components::{drop_zone::VerifyDropZone, result_card::VerifyResultCard};
+use super::components::{
+    drop_zone::VerifyDropZone, result_card::VerifyResultCard, steps_flow::VerifyStepsFlow,
+    steps_modal::VerifyStepsModal,
+};
 
 #[derive(Clone)]
 enum VerifyState {
@@ -17,6 +20,7 @@ enum VerifyState {
 pub fn VerifyPage() -> impl IntoView {
     let file = RwSignal::new(None::<web_sys::File>);
     let state = RwSignal::new(VerifyState::Idle);
+    let show_modal = RwSignal::new(false);
 
     let on_reset = move || {
         file.set(None);
@@ -43,6 +47,11 @@ pub fn VerifyPage() -> impl IntoView {
     };
 
     view! {
+        // -- modal
+        {move || show_modal.get().then(|| view! {
+            <VerifyStepsModal on_close=Callback::new(move |_| show_modal.set(false)) />
+        })}
+
         <div class="max-w-2xl mx-auto px-4 py-12">
 
             // -- header
@@ -70,6 +79,11 @@ pub fn VerifyPage() -> impl IntoView {
                                     "Signed File"
                                 </label>
                                 <VerifyDropZone file=file on_clear=on_clear />
+                                <div class="mt-3">
+                                    <VerifyStepsFlow
+                                        on_show_more=Callback::new(move |_| show_modal.set(true))
+                                    />
+                                </div>
                             </div>
 
                             // -- error banner
@@ -86,7 +100,7 @@ pub fn VerifyPage() -> impl IntoView {
                                 }
                             }}
 
-                            // -- submit button
+                            // -- submit
                             {move || {
                                 let loading = matches!(state.get(), VerifyState::Loading);
                                 view! {
@@ -117,14 +131,12 @@ pub fn VerifyPage() -> impl IntoView {
                 }
             }}
 
-            // -- result card + actions
+            // -- result + actions
             {move || {
                 if let VerifyState::Success(data) = state.get() {
                     view! {
                         <div class="flex flex-col gap-4">
                             <VerifyResultCard data=data />
-
-                            // -- action button
                             <button
                                 class="inline-flex items-center justify-center gap-2 w-full px-5 py-3 text-sm font-semibold text-primary-600 bg-white border-2 border-primary-500 rounded-xl hover:bg-primary-50 hover:border-primary-600 transform hover:scale-[1.02] transition-all duration-300"
                                 on:click=move |_| on_reset()

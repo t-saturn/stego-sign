@@ -1,8 +1,7 @@
 use super::super::api::VerifyData;
 use leptos::prelude::*;
 use lucide_leptos::{
-    Calendar, CircleAlert, CircleCheck, CircleQuestionMark, CircleX, Hash, KeyRound, ShieldAlert,
-    ShieldCheck, ShieldX, User,
+    CircleAlert, CircleCheck, CircleQuestionMark, CircleX, Hash, KeyRound, ShieldCheck,
 };
 
 #[component]
@@ -156,7 +155,7 @@ fn ForensicRow(
     value: Option<bool>,
     children: Children,
 ) -> impl IntoView {
-    let (dot_color, badge_text, badge_class) = match value {
+    let (_dot_color, badge_text, badge_class) = match value {
         Some(true) => (
             "#16a34a",
             "PASS",
