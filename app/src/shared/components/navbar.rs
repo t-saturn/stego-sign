@@ -29,7 +29,7 @@ pub fn Navbar() -> impl IntoView {
         <nav class=move || {
             let base = "fixed top-0 left-0 right-0 z-50 transition-all duration-500 px-6 py-3";
             if scrolled.get() {
-                format!("{} bg-white/80 backdrop-blur-xl shadow-md border-b border-gray-200/50", base)
+                format!("{} bg-white/20 backdrop-blur-sm shadow-md border-b border-gray-200/50", base)
             } else {
                 format!("{} bg-white border-b border-gray-100", base)
             }
