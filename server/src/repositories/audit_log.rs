@@ -7,30 +7,49 @@ use crate::models::document::DocumentStatus;
 
 pub async fn create(db: &DatabaseConnection, payload: CreateAuditLog) -> Result<Uuid, DbErr> {
     let id = Uuid::new_v4();
+    let action = payload.action.clone(); // -- clona antes del match
 
-    db.execute(sea_orm::Statement::from_sql_and_values(
-        sea_orm::DatabaseBackend::Postgres,
-        r#"
-        INSERT INTO app.audit_log
-            (id, document_id, action, result, checked_hash, details)
-        VALUES ($1, $2, $3, $4::app.document_status, $5, $6)
-        "#,
-        [
-            id.into(),
-            payload
-                .document_id
-                .map(|u| u.to_string())
-                .unwrap_or_default()
-                .into(),
-            payload.action.into(),
-            payload.result.to_string().into(),
-            payload.checked_hash.unwrap_or_default().into(),
-            payload.details.into(),
-        ],
-    ))
-    .await?;
+    match payload.document_id {
+        Some(doc_uuid) => {
+            db.execute(sea_orm::Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                r#"
+                INSERT INTO app.audit_log
+                    (id, document_id, action, result, checked_hash, details)
+                VALUES ($1, $2, $3, $4::app.document_status, $5, $6)
+                "#,
+                [
+                    id.into(),
+                    doc_uuid.into(),
+                    payload.action.into(),
+                    payload.result.to_string().into(),
+                    payload.checked_hash.unwrap_or_default().into(),
+                    payload.details.into(),
+                ],
+            ))
+            .await?;
+        }
+        None => {
+            db.execute(sea_orm::Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                r#"
+                INSERT INTO app.audit_log
+                    (id, document_id, action, result, checked_hash, details)
+                VALUES ($1, NULL, $2, $3::app.document_status, $4, $5)
+                "#,
+                [
+                    id.into(),
+                    payload.action.into(),
+                    payload.result.to_string().into(),
+                    payload.checked_hash.unwrap_or_default().into(),
+                    payload.details.into(),
+                ],
+            ))
+            .await?;
+        }
+    }
 
-    info!(audit_id = %id, "audit log entry created");
+    info!(audit_id = %id, action = %action, "audit log entry created"); // -- usa el clone
     Ok(id)
 }
 
@@ -42,7 +61,8 @@ pub async fn list_by_document(
         .query_all(sea_orm::Statement::from_sql_and_values(
             sea_orm::DatabaseBackend::Postgres,
             r#"
-            SELECT id, document_id, action, checked_at, result::text, checked_hash, details
+            SELECT id, document_id, action, checked_at,
+                   result::text, checked_hash, details
             FROM app.audit_log
             WHERE document_id = $1
             ORDER BY checked_at DESC
