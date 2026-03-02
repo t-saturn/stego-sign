@@ -69,35 +69,42 @@ pub async fn verify_handler(
     // -- 3. cross-check with db by document_id from payload
     let db_doc = doc_repo::find_by_hash(&state.db, &payload.original_hash).await;
 
-    let (status, details) = match db_doc {
+    let (status, hash_match, signature_valid, registered, details) = match db_doc {
         Ok(Some(doc)) => {
             if doc.hash_sha256 == current_hash {
-                // -- hash matches: verify cryptographic signature
                 let sig_valid =
                     crypto::verify(&current_hash, &payload.signature, state.verify_key.as_str());
                 if sig_valid {
                     (
                         DocumentStatus::Valid,
+                        true,
+                        true,
+                        true,
                         serde_json::json!({
-                            "document_id":   doc.id,
-                            "original_hash": doc.hash_sha256,
-                            "current_hash":  current_hash,
-                            "author":        doc.author,
-                            "signed_at":     doc.signed_at,
+                            "document_id": doc.id,
+                            "filename":    doc.filename,
+                            "author":      doc.author,
+                            "signed_at":   doc.signed_at,
+                            "hash":        doc.hash_sha256,
                         }),
                     )
                 } else {
                     (
                         DocumentStatus::Tampered,
+                        true,
+                        false,
+                        true,
                         serde_json::json!({
                             "reason": "signature mismatch despite matching hash",
                         }),
                     )
                 }
             } else {
-                // -- hash differs: file was modified
                 (
                     DocumentStatus::Tampered,
+                    false,
+                    false,
+                    true,
                     serde_json::json!({
                         "document_id":   doc.id,
                         "original_hash": doc.hash_sha256,
@@ -107,25 +114,26 @@ pub async fn verify_handler(
                 )
             }
         }
-        Ok(None) => {
-            // -- payload exists but not in db
-            (
-                DocumentStatus::Unregistered,
-                serde_json::json!({
-                    "reason":        "payload found but document not in registry",
-                    "current_hash":  current_hash,
-                }),
-            )
-        }
+        Ok(None) => (
+            DocumentStatus::Unregistered,
+            true,
+            true,
+            false,
+            serde_json::json!({
+                "reason":       "payload found but document not in registry",
+                "current_hash": current_hash,
+            }),
+        ),
         Err(e) => (
             DocumentStatus::Invalid,
-            serde_json::json!({
-                "reason": format!("database error: {}", e),
-            }),
+            false,
+            false,
+            false,
+            serde_json::json!({ "reason": format!("database error: {}", e) }),
         ),
     };
 
-    // -- 4. if tampered: store file in corrupted bucket
+    // -- si tampered: guarda en corrupted bucket (igual que antes)
     if status == DocumentStatus::Tampered {
         let key = format!("corrupted/{}", filename);
         let _ = storage::upload(
@@ -139,7 +147,7 @@ pub async fn verify_handler(
         warn!(filename = %filename, "tampered file stored in corrupted bucket");
     }
 
-    // -- 5. write audit log
+    // -- audit log (igual que antes)
     let _ = audit_repo::create(
         &state.db,
         CreateAuditLog {
@@ -148,7 +156,7 @@ pub async fn verify_handler(
                 .and_then(|v| v.as_str())
                 .and_then(|s| s.parse().ok()),
             result: status.clone(),
-            checked_hash: Some(current_hash),
+            checked_hash: Some(current_hash.clone()),
             details: details.clone(),
         },
     )
@@ -156,9 +164,17 @@ pub async fn verify_handler(
 
     info!(status = %status, "verification complete");
 
+    // -- respuesta con booleanos explícitos
     Json(ApiResponse::ok(serde_json::json!({
-        "status":  status,
-        "details": details,
+        "status":          status,
+        "hash_match":      hash_match,
+        "signature_valid": signature_valid,
+        "registered":      registered,
+        "document_id":     details.get("document_id"),
+        "filename":        details.get("filename"),
+        "author":          details.get("author"),
+        "signed_at":       details.get("signed_at"),
+        "hash":            details.get("hash"),
     })))
     .into_response()
 }
