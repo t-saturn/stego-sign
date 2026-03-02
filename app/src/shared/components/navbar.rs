@@ -67,13 +67,36 @@ pub fn Navbar() -> impl IntoView {
 
 #[component]
 fn NavLink(href: &'static str, label: &'static str) -> impl IntoView {
+    let location = leptos_router::hooks::use_location();
+
+    let is_active = move || {
+        let path = location.pathname.get();
+        if href == "/" {
+            path == "/"
+        } else {
+            path.starts_with(href)
+        }
+    };
+
     view! {
         <A
             href=href
-            attr:class="relative px-4 py-2 text-sm font-medium text-gray-600 hover:text-primary-500 transition-colors duration-200 rounded-lg hover:bg-primary-50 group"
+            attr:class=move || {
+                if is_active() {
+                    "relative px-4 py-2 text-sm font-medium text-primary-600 transition-colors duration-200 rounded-lg group"
+                } else {
+                    "relative px-4 py-2 text-sm font-medium text-gray-600 hover:text-primary-500 transition-colors duration-200 rounded-lg group"
+                }
+            }
         >
             {label}
-            <span class="absolute bottom-1 left-4 right-4 h-0.5 bg-gradient-to-r from-primary-500 to-primary-400 scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-left rounded-full">
+            <span class=move || {
+                if is_active() {
+                    "absolute bottom-1 left-4 right-4 h-0.5 bg-gradient-to-r from-primary-500 to-primary-400 scale-x-100 rounded-full"
+                } else {
+                    "absolute bottom-1 left-4 right-4 h-0.5 bg-gradient-to-r from-primary-500 to-primary-400 scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-left rounded-full"
+                }
+            }>
             </span>
         </A>
     }

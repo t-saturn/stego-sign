@@ -44,19 +44,11 @@ pub fn Footer() -> impl IntoView {
 
                     // -- brand
                     <div class="flex flex-col gap-4">
-                        <div class="flex items-center gap-2">
-                            <img src="/logo.png" alt="StegoSign" class="w-8 h-8 object-contain"/>
-                            <span class="font-display font-bold text-navy text-lg">"StegoSign"</span>
-                        </div>
-                        <p class="text-sm leading-relaxed text-gray-500">
-                            "Cryptographic document integrity using steganography. "
-                            "Built with Rust, Axum, Leptos and PostgreSQL."
-                        </p>
+                        <img src="/logo.png" alt="StegoSign" class="w-24 h-24 object-contain"/>
                         <div class="flex items-center gap-1 text-xs text-gray-400">
                             <Shield size=12 />
                             "Ed25519 + SHA-256 signatures"
                         </div>
-                        // -- github
                         <a
                             href="https://github.com/fn-9li9/stego-sign"
                             target="_blank"
