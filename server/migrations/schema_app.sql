@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS app.documents (
     object_id UUID NOT NULL REFERENCES files.objects (id) ON DELETE RESTRICT,
     signed_at TIMESTAMPTZ NOT NULL DEFAULT now (),
     status app.document_status NOT NULL DEFAULT 'VALID',
+    verification_code TEXT UNIQUE,
     metadata JSONB
 );
 
