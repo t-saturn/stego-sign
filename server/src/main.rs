@@ -23,6 +23,7 @@ pub struct AppState {
     pub storage: Arc<S3Client>,
     pub signing_key: Arc<String>,
     pub verify_key: Arc<String>,
+    pub app_base_url: String,
 }
 
 #[tokio::main]
@@ -53,6 +54,7 @@ async fn main() {
         storage: Arc::new(s3_client),
         signing_key,
         verify_key,
+        app_base_url: env.app_base_url.clone(),
     };
 
     let app = Router::new()
