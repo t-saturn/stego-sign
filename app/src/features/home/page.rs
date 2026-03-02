@@ -73,9 +73,18 @@ pub fn HomePage() -> impl IntoView {
             <section class="py-20 px-4 bg-gray-50">
                 <div class="max-w-6xl mx-auto">
                     <div class="text-center mb-16">
-                        <span class="section-label justify-center">"How it works"</span>
-                        <h2 class="section-title">"Three steps to trust"</h2>
-                        <p class="section-subtitle">
+                        <span class="inline-flex items-center justify-center gap-2 text-xs font-bold text-primary-600 uppercase tracking-widest mb-4">
+                            <span class="w-6 h-px bg-primary-400"></span>
+                            "How it works"
+                            <span class="w-6 h-px bg-primary-400"></span>
+                        </span>
+                        <h2 class="text-3xl md:text-4xl font-display font-bold text-navy mb-4 leading-tight">
+                            "Three steps to "
+                            <span class="bg-gradient-to-r from-primary-500 to-primary-600 bg-clip-text text-transparent">
+                                "trust"
+                            </span>
+                        </h2>
+                        <p class="text-gray-400 text-sm md:text-base max-w-md mx-auto leading-relaxed">
                             "A reproducible SRE-grade pipeline for document authenticity"
                         </p>
                     </div>
