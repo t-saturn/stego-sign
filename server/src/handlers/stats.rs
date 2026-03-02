@@ -22,10 +22,12 @@ pub async fn stats_handler(State(state): State<AppState>) -> impl IntoResponse {
     let verifications = audit_repo::count_by_action(&state.db, "VERIFY")
         .await
         .unwrap_or(0);
-    let tampered = doc_repo::count_by_status(&state.db, "TAMPERED")
+    let objects = obj_repo::count_all(&state.db).await.unwrap_or(0);
+
+    // -- cuenta verificaciones con resultado no exitoso (TAMPERED + INVALID + UNREGISTERED)
+    let tampered = audit_repo::count_failed_verifications(&state.db)
         .await
         .unwrap_or(0);
-    let objects = obj_repo::count_all(&state.db).await.unwrap_or(0);
 
     info!(
         documents_signed,

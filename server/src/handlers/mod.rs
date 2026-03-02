@@ -4,4 +4,5 @@ pub mod health;
 pub mod registry;
 pub mod sign;
 pub mod stats;
+pub mod storage_download;
 pub mod verify;

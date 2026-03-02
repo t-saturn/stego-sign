@@ -23,6 +23,7 @@ pub struct VerificationEntry {
     pub result: String,
     pub checked_hash: Option<String>,
     pub checked_at: String,
+    pub upload_key: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -79,7 +80,8 @@ pub async fn registry_handler(State(state): State<AppState>) -> impl IntoRespons
                 a.result::text,
                 a.checked_hash,
                 a.checked_at,
-                a.details->>'filename' AS filename
+                a.details->>'filename' AS filename,
+                a.details->>'upload_key' AS upload_key
             FROM app.audit_log a
             WHERE a.action = 'VERIFY'
             ORDER BY a.checked_at DESC
@@ -107,6 +109,7 @@ pub async fn registry_handler(State(state): State<AppState>) -> impl IntoRespons
                 .try_get::<chrono::DateTime<chrono::Utc>>("", "checked_at")
                 .map(|d| d.to_rfc3339())
                 .unwrap_or_default(),
+            upload_key: r.try_get("", "upload_key").ok(),
         })
         .collect();
 

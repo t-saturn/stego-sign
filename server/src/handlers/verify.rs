@@ -208,7 +208,7 @@ pub async fn verify_handler(
         warn!(filename = %filename, "tampered file stored in corrupted bucket");
     }
 
-    // -- 6. audit log
+    // -- 6. audit log — incluye upload_key para poder descargar después
     let _ = audit_repo::create(
         &state.db,
         CreateAuditLog {
@@ -219,7 +219,11 @@ pub async fn verify_handler(
             action: "VERIFY".to_string(),
             result: status.clone(),
             checked_hash: Some(current_hash.clone()),
-            details: details.clone(),
+            details: {
+                let mut d = details.clone();
+                d["upload_key"] = serde_json::json!(upload_key);
+                d
+            },
         },
     )
     .await;
