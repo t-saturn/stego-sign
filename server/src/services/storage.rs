@@ -102,3 +102,14 @@ pub async fn download(client: &Client, bucket: &str, key: &str) -> anyhow::Resul
     let data = resp.body.collect().await?.into_bytes();
     Ok(data)
 }
+
+pub async fn count_objects(client: &aws_sdk_s3::Client, bucket: &str) -> Result<u64, String> {
+    let resp = client
+        .list_objects_v2()
+        .bucket(bucket)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(resp.key_count().unwrap_or(0) as u64)
+}
