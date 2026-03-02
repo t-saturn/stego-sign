@@ -3,9 +3,8 @@ use leptos_router::components::A;
 use lucide_leptos::{
     CircleAlert, CircleCheck, CircleX, FileLock, FileSearch, FileStack, LoaderCircle, RotateCcw,
 };
-use wasm_bindgen_futures::spawn_local;
 
-use super::api::{fetch_registry, Registry};
+use super::api::Registry;
 use super::components::document_row::{SignedDocRow, VerificationRow};
 
 #[derive(Clone, PartialEq)]
@@ -14,6 +13,7 @@ enum Tab {
     Verifications,
 }
 
+#[allow(dead_code)]
 #[derive(Clone)]
 enum DocsState {
     Loading,
@@ -30,6 +30,8 @@ pub fn DocumentsPage() -> impl IntoView {
         state.set(DocsState::Loading);
         #[cfg(feature = "hydrate")]
         {
+            use super::api::fetch_registry;
+            use wasm_bindgen_futures::spawn_local; // -- import dentro del cfg
             spawn_local(async move {
                 match fetch_registry().await {
                     Ok(r) => state.set(DocsState::Loaded(r)),
@@ -47,7 +49,6 @@ pub fn DocumentsPage() -> impl IntoView {
             // -- header
             <div class="flex items-start justify-between mb-8">
                 <div>
-                    <p class="text-sm font-semibold text-primary-600 mb-1">"Audit Registry"</p>
                     <h1 class="text-3xl font-display font-semibold text-primary-600 mb-2">
                         "Documents"
                     </h1>
