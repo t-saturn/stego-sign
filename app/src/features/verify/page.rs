@@ -130,7 +130,6 @@ pub fn VerifyPage() -> impl IntoView {
 
             // -- header
             <div class="mb-10">
-                <p class="text-sm font-semibold text-primary-600 mb-1">"Document Verification"</p>
                 <h1 class="text-3xl font-display font-semibold text-primary-600 mb-3">
                     "Verify a Document"
                 </h1>
