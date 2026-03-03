@@ -10,12 +10,16 @@ use crate::shared::components::{footer::Footer, navbar::Navbar};
 
 #[cfg(feature = "ssr")]
 pub fn shell(options: leptos::config::LeptosOptions) -> impl IntoView {
+    let api_url = std::env::var("PUBLIC_API_BASE_URL")
+        .unwrap_or_else(|_| "http://localhost:55547".to_string());
+
     view! {
         <!DOCTYPE html>
         <html lang="en">
             <head>
                 <meta charset="UTF-8"/>
                 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+                <meta name="api-base-url" content=api_url/>  // <-- agrega esto
                 <AutoReload options=options.clone()/>
                 <HydrationScripts options=options.clone()/>
                 <MetaTags/>
