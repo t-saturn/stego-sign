@@ -59,9 +59,47 @@ pub async fn sign_handler(
 
     info!(filename = %filename, author = %author, "sign request received");
 
-    let file_size = bytes.len() as i64;
-    let hash = crypto::sha256(&bytes);
+    // -- 1. aplica watermark PRIMERO si es PDF (antes de hashear)
+    // --    así el hash corresponde al contenido watermarkeado
+    let watermarked_bytes = if filename.to_lowercase().ends_with(".pdf") {
+        let verification_code_preview = qr::generate_verification_code();
+        let verify_url = format!(
+            "{}/verify?code={}",
+            state.app_base_url, verification_code_preview
+        );
 
+        match qr::generate_qr_png(&verify_url, 256) {
+            Ok(qr_png) => {
+                let pos = watermark::WatermarkPosition::from_str(&wm_pos);
+                match watermark::insert_qr_into_pdf(&bytes, &qr_png, pos, 72.0) {
+                    Ok(wm) => {
+                        info!(filename = %filename, "qr watermark applied before hashing");
+                        (bytes::Bytes::from(wm), Some(verification_code_preview))
+                    }
+                    Err(e) => {
+                        warn!(error = %e, "watermark failed, proceeding without it");
+                        (bytes.clone(), None)
+                    }
+                }
+            }
+            Err(e) => {
+                warn!(error = %e, "qr generation failed");
+                (bytes.clone(), None)
+            }
+        }
+    } else {
+        (bytes.clone(), None)
+    };
+
+    let (content_bytes, wm_code) = watermarked_bytes;
+
+    // -- 2. genera verification_code definitivo
+    let verification_code = wm_code.unwrap_or_else(|| qr::generate_verification_code());
+
+    // -- 3. hash del contenido watermarkeado (o del original si no es PDF)
+    let hash = crypto::sha256(&content_bytes);
+
+    // -- 4. firma el hash
     let signature = match crypto::sign(&hash, state.signing_key.as_str()) {
         Ok(s) => s,
         Err(e) => {
@@ -73,50 +111,32 @@ pub async fn sign_handler(
         }
     };
 
+    // -- 5. embed stego payload en el contenido watermarkeado
     let document_id = Uuid::new_v4();
-    let verification_code = qr::generate_verification_code();
-
-    // -- embed stego payload
-    let signed_bytes =
-        match stego::embed(&bytes, &filename, document_id, &hash, &signature, &author) {
-            Ok(b) => b,
-            Err(e) => {
-                error!(error = %e, "stego embed failed");
-                return ApiError {
-                    status: StatusCode::INTERNAL_SERVER_ERROR,
-                    message: "embed failed".to_string(),
-                }
-                .into_response();
-            }
-        };
-
-    // -- genera QR y aplica watermark si es PDF
     let verify_url = format!("{}/verify?code={}", state.app_base_url, verification_code);
-    let final_bytes = if filename.to_lowercase().ends_with(".pdf") {
-        match qr::generate_qr_png(&verify_url, 256) {
-            Ok(qr_png) => {
-                let pos = watermark::WatermarkPosition::from_str(&wm_pos);
-                match watermark::insert_qr_into_pdf(&signed_bytes, &qr_png, pos, 72.0) {
-                    Ok(watermarked) => {
-                        info!(filename = %filename, "qr watermark applied");
-                        bytes::Bytes::from(watermarked)
-                    }
-                    Err(e) => {
-                        warn!(error = %e, "watermark failed, using signed file without watermark");
-                        bytes::Bytes::from(signed_bytes)
-                    }
-                }
+    let signed_bytes = match stego::embed(
+        &content_bytes,
+        &filename,
+        document_id,
+        &hash,
+        &signature,
+        &author,
+    ) {
+        Ok(b) => b,
+        Err(e) => {
+            error!(error = %e, "stego embed failed");
+            return ApiError {
+                status: StatusCode::INTERNAL_SERVER_ERROR,
+                message: "embed failed".to_string(),
             }
-            Err(e) => {
-                warn!(error = %e, "qr generation failed");
-                bytes::Bytes::from(signed_bytes)
-            }
+            .into_response();
         }
-    } else {
-        bytes::Bytes::from(signed_bytes)
     };
 
-    // -- upload original
+    let file_size = bytes.len() as i64;
+    let signed_size = signed_bytes.len() as i64;
+
+    // -- 6. upload original sin modificar
     let upload_key = format!("{}/{}", document_id, filename);
     if let Err(e) = storage::upload(
         &state.storage,
@@ -135,13 +155,13 @@ pub async fn sign_handler(
         .into_response();
     }
 
-    // -- upload firmado (con watermark si PDF)
+    // -- 7. upload firmado (watermark + stego)
     let signed_key = format!("{}/signed_{}", document_id, filename);
     if let Err(e) = storage::upload(
         &state.storage,
         storage::BUCKET_SIGNATURES,
         &signed_key,
-        final_bytes,
+        signed_bytes,
         "application/octet-stream",
     )
     .await
@@ -154,7 +174,7 @@ pub async fn sign_handler(
         .into_response();
     }
 
-    // -- registra en files.objects
+    // -- 8. registra en files.objects
     let object_id = match obj_repo::register(
         &state.db,
         obj_repo::CreateObject {
@@ -185,12 +205,12 @@ pub async fn sign_handler(
             object_key: signed_key.clone(),
             filename: format!("signed_{}", filename),
             content_type: "application/octet-stream".to_string(),
-            size_bytes: file_size,
+            size_bytes: signed_size,
         },
     )
     .await;
 
-    // -- registra documento con verification_code
+    // -- 9. registra documento con verification_code
     let doc_id = match doc_repo::create(
         &state.db,
         CreateDocument {
@@ -201,9 +221,9 @@ pub async fn sign_handler(
             object_id,
             verification_code: Some(verification_code.clone()),
             metadata: Some(serde_json::json!({
-                "upload_key": upload_key,
-                "signed_key": signed_key,
-                "verify_url": verify_url,
+                "upload_key":  upload_key,
+                "signed_key":  signed_key,
+                "verify_url":  verify_url,
             })),
         },
     )
@@ -220,7 +240,7 @@ pub async fn sign_handler(
         }
     };
 
-    // -- audit log
+    // -- 10. audit log
     let _ = audit_repo::create(
         &state.db,
         CreateAuditLog {
