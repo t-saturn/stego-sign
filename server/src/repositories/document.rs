@@ -11,24 +11,49 @@ pub async fn create(
 ) -> Result<Uuid, sea_orm::DbErr> {
     let id = Uuid::new_v4();
 
-    db.execute(sea_orm::Statement::from_sql_and_values(
-        sea_orm::DatabaseBackend::Postgres,
-        r#"
-        INSERT INTO app.documents
-            (id, filename, hash_sha256, signature, author, object_id, metadata)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-        "#,
-        [
-            id.into(),
-            payload.filename.into(),
-            payload.hash_sha256.into(),
-            payload.signature.into(),
-            payload.author.into(),
-            payload.object_id.into(),
-            payload.metadata.unwrap_or(serde_json::Value::Null).into(),
-        ],
-    ))
-    .await?;
+    match payload.verification_code {
+        Some(code) => {
+            db.execute(sea_orm::Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                r#"
+                INSERT INTO app.documents
+                    (id, filename, hash_sha256, signature, author, object_id, verification_code, metadata)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                "#,
+                [
+                    id.into(),
+                    payload.filename.into(),
+                    payload.hash_sha256.into(),
+                    payload.signature.into(),
+                    payload.author.into(),
+                    payload.object_id.into(),
+                    code.into(),
+                    payload.metadata.unwrap_or(serde_json::Value::Null).into(),
+                ],
+            ))
+            .await?;
+        }
+        None => {
+            db.execute(sea_orm::Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                r#"
+                INSERT INTO app.documents
+                    (id, filename, hash_sha256, signature, author, object_id, metadata)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                "#,
+                [
+                    id.into(),
+                    payload.filename.into(),
+                    payload.hash_sha256.into(),
+                    payload.signature.into(),
+                    payload.author.into(),
+                    payload.object_id.into(),
+                    payload.metadata.unwrap_or(serde_json::Value::Null).into(),
+                ],
+            ))
+            .await?;
+        }
+    }
 
     info!(document_id = %id, "document record created");
     Ok(id)
