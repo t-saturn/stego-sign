@@ -80,7 +80,7 @@ services:
       LEPTOS_SITE_PKG_DIR: ${LEPTOS_SITE_PKG_DIR}
       LEPTOS_SITE_ADDR:    0.0.0.0:3000
     ports:
-      - "${APP_PORT}:300"
+      - "${APP_PORT}:3000"
     depends_on:
       - server
 
