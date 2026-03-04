@@ -46,16 +46,18 @@ services:
     container_name: stego-server
     restart: unless-stopped
     environment:
-      DATABASE_URL:       postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      STORAGE_ENDPOINT:   http://aistor:9000
-      STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY}
-      STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY}
-      SERVER_HOST:        0.0.0.0
-      SERVER_PORT:        4000
-      RUST_LOG:           ${RUST_LOG}
-      SIGNING_KEY:        ${SIGNING_KEY}
-      VERIFY_KEY:         ${VERIFY_KEY}
-      APP_BASE_URL:       ${APP_BASE_URL}
+      DATABASE_URL:          postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      STORAGE_PROVIDER:      ${STORAGE_PROVIDER}
+      STORAGE_ENDPOINT:      ${STORAGE_ENDPOINT:-http://aistor:9000}
+      STORAGE_ACCESS_KEY:    ${STORAGE_ACCESS_KEY}
+      STORAGE_SECRET_KEY:    ${STORAGE_SECRET_KEY}
+      STORAGE_BUCKET_PREFIX: ${STORAGE_BUCKET_PREFIX}
+      SERVER_HOST:           0.0.0.0
+      SERVER_PORT:           4000
+      RUST_LOG:              ${RUST_LOG:-info}
+      SIGNING_KEY:           ${SIGNING_KEY}
+      VERIFY_KEY:            ${VERIFY_KEY}
+      APP_BASE_URL:          ${APP_BASE_URL}
     expose:
       - "4000"
     depends_on:
@@ -72,7 +74,7 @@ services:
     container_name: stego-app
     restart: unless-stopped
     environment:
-      APP_ENV:             ${APP_ENV}
+      APP_ENV:             ${APP_ENV:-production}
       API_BASE_URL:        http://server:4000
       PUBLIC_API_BASE_URL: http://localhost:${APP_PORT}
       LEPTOS_OUTPUT_NAME:  ${LEPTOS_OUTPUT_NAME}
