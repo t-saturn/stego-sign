@@ -75,7 +75,7 @@ pub fn Footer() -> impl IntoView {
                         <TechItem label="Rust + Axum"    desc="Backend API"/>
                         <TechItem label="Leptos + WASM"  desc="Frontend"/>
                         <TechItem label="PostgreSQL 17"  desc="Database"/>
-                        <TechItem label="MinIO AIStor"   desc="Object Storage"/>
+                        <TechItem label="MinIO AIStor | AWS S3"   desc="Object Storage"/>
                     </div>
                 </div>
 
