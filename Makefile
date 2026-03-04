@@ -80,7 +80,7 @@ deploy-aistor: ## deploy with local aistor storage (no aws s3)
 deploy-aws: ## deploy with aws s3 storage (no aistor)
 	STORAGE_PROVIDER=aws \
 	STORAGE_ENDPOINT="" \
-	docker compose up -d db server app
+	docker compose up -d --scale aistor=0 db server app
 
 # -- database migrations
 migrate: ## apply all schemas (files first, then app)
