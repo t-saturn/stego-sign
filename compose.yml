@@ -17,19 +17,20 @@ services:
       timeout: 5s
       retries: 5
 
-  files:
+  aistor:
     image: quay.io/minio/aistor/minio:latest
-    container_name: stego-files
+    container_name: stego-aistor
     restart: unless-stopped
     expose:
-      - "9000"                          # siempre 9000, fijo
+      - "9000"
     ports:
-      - "${STORAGE_CONSOLE_PORT}:9001"  # consola web: 55546 → 9001
+      - "9000:9000"                        # API S3 → accesible desde local
+      - "${STORAGE_CONSOLE_PORT}:9001"
     environment:
       MINIO_ROOT_USER:     ${STORAGE_ACCESS_KEY}
       MINIO_ROOT_PASSWORD: ${STORAGE_SECRET_KEY}
     volumes:
-      - minio_data:/mnt/data
+      - aistor_data:/mnt/data
       - ./minio.license:/minio.license:ro
     command: server /mnt/data --console-address :9001 --license /minio.license
     healthcheck:
@@ -46,7 +47,7 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL:       postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      STORAGE_ENDPOINT:   http://files:9000
+      STORAGE_ENDPOINT:   http://aistor:9000
       STORAGE_ACCESS_KEY: ${STORAGE_ACCESS_KEY}
       STORAGE_SECRET_KEY: ${STORAGE_SECRET_KEY}
       SERVER_HOST:        0.0.0.0
@@ -59,7 +60,7 @@ services:
       - "4000"
     depends_on:
       - db
-      - files
+      - aistor
 
   app:
     build:
@@ -85,4 +86,4 @@ services:
 
 volumes:
   pg_data:
-  minio_data:
+  aistor_data:
