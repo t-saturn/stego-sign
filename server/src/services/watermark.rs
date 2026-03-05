@@ -57,9 +57,20 @@ pub fn insert_qr_into_pdf(
         let (page_w, page_h) = get_page_dimensions(&doc, page_id);
         let (x, y) = compute_xy(position, page_w, page_h, size_pts, 20.0);
 
+        tracing::debug!(
+            page_id = ?page_id,
+            page_w,
+            page_h,
+            qr_x = x,
+            qr_y = y,
+            "inserting QR watermark"
+        );
+
         // -- agrega XObject a Resources de la página
         add_xobject_to_page(&mut doc, page_id, img_obj_id)
             .map_err(|e| format!("add xobject: {}", e))?;
+
+        tracing::debug!("xobject added ok");
 
         // -- crea stream de dibujo
         let draw = format!(
@@ -72,6 +83,8 @@ pub fn insert_qr_into_pdf(
 
         // -- añade el stream a Contents
         append_content(&mut doc, page_id, draw_id).map_err(|e| format!("append content: {}", e))?;
+
+        tracing::debug!("content appended ok");
     }
 
     let mut out = Vec::new();
@@ -113,22 +126,36 @@ fn add_xobject_to_page(
     page_id: ObjectId,
     img_id: ObjectId,
 ) -> Result<(), lopdf::Error> {
-    let page = doc.get_object_mut(page_id)?.as_dict_mut()?;
+    // -- Resuelve Resources: puede ser inline o referencia indirecta
+    let resources_id: Option<ObjectId> = {
+        let page = doc.get_object(page_id)?.as_dict()?;
+        match page.get(b"Resources") {
+            Ok(Object::Reference(r)) => Some(*r),
+            _ => None,
+        }
+    };
 
-    // -- obtiene o crea Resources
-    if !page.has(b"Resources") {
-        page.set("Resources", Object::Dictionary(Dictionary::new()));
+    if let Some(res_id) = resources_id {
+        // Resources es referencia indirecta — mutamos el objeto referenciado
+        let resources = doc.get_object_mut(res_id)?.as_dict_mut()?;
+        if !resources.has(b"XObject") {
+            resources.set("XObject", Object::Dictionary(Dictionary::new()));
+        }
+        let xobjects = resources.get_mut(b"XObject")?.as_dict_mut()?;
+        xobjects.set("QRWatermark", Object::Reference(img_id));
+    } else {
+        // Resources es inline en la página
+        let page = doc.get_object_mut(page_id)?.as_dict_mut()?;
+        if !page.has(b"Resources") {
+            page.set("Resources", Object::Dictionary(Dictionary::new()));
+        }
+        let resources = page.get_mut(b"Resources")?.as_dict_mut()?;
+        if !resources.has(b"XObject") {
+            resources.set("XObject", Object::Dictionary(Dictionary::new()));
+        }
+        let xobjects = resources.get_mut(b"XObject")?.as_dict_mut()?;
+        xobjects.set("QRWatermark", Object::Reference(img_id));
     }
-
-    let resources = page.get_mut(b"Resources")?.as_dict_mut()?;
-
-    // -- obtiene o crea XObject dentro de Resources
-    if !resources.has(b"XObject") {
-        resources.set("XObject", Object::Dictionary(Dictionary::new()));
-    }
-
-    let xobjects = resources.get_mut(b"XObject")?.as_dict_mut()?;
-    xobjects.set("QRWatermark", Object::Reference(img_id));
 
     Ok(())
 }
@@ -138,22 +165,34 @@ fn append_content(
     page_id: ObjectId,
     draw_id: ObjectId,
 ) -> Result<(), lopdf::Error> {
-    let page = doc.get_object_mut(page_id)?.as_dict_mut()?;
+    // -- Lee Contents actual (puede ser ref, array, o ausente)
+    let contents_val: Option<Object> = {
+        let page = doc.get_object(page_id)?.as_dict()?;
+        page.get(b"Contents").ok().cloned()
+    };
 
-    match page.get_mut(b"Contents") {
-        Ok(contents) => match contents {
-            Object::Reference(r) => {
-                let old = Object::Reference(*r);
-                *contents = Object::Array(vec![old, Object::Reference(draw_id)]);
-            }
-            Object::Array(arr) => {
-                arr.push(Object::Reference(draw_id));
-            }
-            _ => {
-                *contents = Object::Array(vec![Object::Reference(draw_id)]);
-            }
-        },
-        Err(_) => {
+    match contents_val {
+        None => {
+            // Sin Contents — lo creamos directo
+            let page = doc.get_object_mut(page_id)?.as_dict_mut()?;
+            page.set("Contents", Object::Reference(draw_id));
+        }
+        Some(Object::Reference(r)) => {
+            // Reemplazamos la ref única por un array [ref_original, draw_id]
+            let page = doc.get_object_mut(page_id)?.as_dict_mut()?;
+            page.set(
+                "Contents",
+                Object::Array(vec![Object::Reference(r), Object::Reference(draw_id)]),
+            );
+        }
+        Some(Object::Array(mut arr)) => {
+            // Ya es array — añadimos al final
+            arr.push(Object::Reference(draw_id));
+            let page = doc.get_object_mut(page_id)?.as_dict_mut()?;
+            page.set("Contents", Object::Array(arr));
+        }
+        Some(_) => {
+            let page = doc.get_object_mut(page_id)?.as_dict_mut()?;
             page.set("Contents", Object::Reference(draw_id));
         }
     }
